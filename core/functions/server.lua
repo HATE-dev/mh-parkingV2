@@ -216,19 +216,17 @@ function Parking.Functions.RefreshVehicles(src, onStart)
     if onStart then
         if fistjoin then
             fistjoin = false
-            GetSinglePlayerId()
-        end
-    elseif not onStart then
-        if fistjoin then
-            fistjoin = false
             playerId = src
+            local vehicles = CreateVehicleList()
+            Wait(50)
+            TriggerClientEvent("mh-parkingV2:client:RefreshVehicles", playerId, vehicles)
         end
-    end
-    Wait(50)
-    if playerId ~= -1 then
-        local vehicles = CreateVehicleList()
-        Wait(50)
-        TriggerClientEvent("mh-parkingV2:client:RefreshVehicles", playerId, vehicles)
+    else
+        if not fistjoin then
+            local vehicles = CreateVehicleList()
+            Wait(50)
+            TriggerClientEvent("mh-parkingV2:client:RefreshVehicles", src, vehicles)
+        end
     end
 end
 

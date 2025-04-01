@@ -1,7 +1,7 @@
 Parking = {}
 Parking.Functions, displayOwnerText, disableControll = {}, nil, false
-LocalVehicles, diableParkedBlips, currentVehicle, currentSeat = {}, {}, 0, 0
-isDeleting, isInVehicle, isEnteringVehicle, parkMenu = false, false, false, nil
+local LocalVehicles, diableParkedBlips, currentVehicle, currentSeat = {}, {}, 0, 0
+local isDeleting, isInVehicle, isEnteringVehicle, parkMenu = false, false, false, nil
 
 function Parking.Functions.OnJoin(data)
     config = data
@@ -48,19 +48,12 @@ function Parking.Functions.AddParkedVehicle(entity, data)
 end
 
 function Parking.Functions.IsVehicleAlreadyListed(plate)
-    local isListed = false
     if #LocalVehicles > 0 then
         for i = 1, #LocalVehicles do
-            if LocalVehicles[i] and LocalVehicles[i].plate ~= nil then
-                if SamePlates(LocalVehicles[i].plate, plate) then
-                    isListed = true
-                    break
-                end
-                isListed = DoesVehicleAlreadyExsistOnServer(LocalVehicles[i].plate)
-            end
+            if SamePlates(LocalVehicles[i].plate, plate) then return true end
         end
     end
-    return isListed
+    return false
 end
 
 function Parking.Functions.DeteteParkedBlip(vehicle)
@@ -107,20 +100,6 @@ function Parking.Functions.BlinkVehiclelights(vehicle,state)
     end
 end
 
-function Parking.Functions.DeleteAllTrailers()
-    if type(LocalVehicles) == 'table' and #LocalVehicles > 0 then 
-        for i = 1, #LocalVehicles, 1 do
-            if LocalVehicles[i].trailerEntity ~= nil then
-                if DoesEntityExist(LocalVehicles[i].trailerEntity) then
-                    print(GetEntityModel(LocalVehicles[i].trailerEntity))
-                    DeleteEntity(LocalVehicles[i].trailerEntity)
-                    LocalVehicles[i].trailerEntity = nil
-                end
-            end
-        end
-    end
-end
-
 function Parking.Functions.RemoveVehicles(vehicles)
     isDeleting = true
     if type(vehicles) == 'table' and #vehicles > 0 and vehicles[1] ~= nil then
@@ -139,8 +118,13 @@ function Parking.Functions.RemoveVehicles(vehicles)
                 end
             end
         end
+        for i = 1, #LocalVehicles, 1 do
+            NetworkFadeOutEntity(LocalVehicles[i].trailerEntity, false, true)
+            while NetworkIsEntityFading(LocalVehicles[i].trailerEntity) do Wait(0) end
+            Wait(100)
+            if DoesEntityExist(LocalVehicles[i].trailerEntity) then DeleteEntity(LocalVehicles[i].trailerEntity) end
+        end
     end
-    Wait(50)
     LocalVehicles = {}
     Wait(1500)
     isDeleting = false
@@ -391,62 +375,75 @@ function Parking.Functions.SpawnTrailer(vehicle, data)
     SetNetworkIdCanMigrate(netid, true)
     NetworkFadeInEntity(entity, true)
     while NetworkIsEntityFading(entity) do Citizen.Wait(50) end
+    --local retval, groundZ = GetGroundZFor_3dCoord(trailerSpawnPos.x, trailerSpawnPos.y, vehicleCoords.z, false)
+    --if retval then SetEntityCoords(trailer, trailerSpawnPos.x, trailerSpawnPos.y, groundZ) end
     SetVehicleOnGroundProperly(trailer)
     SetVehicleDirtLevel(trailer, 0)
     CreateTrailerTarget(trailer)
     Wait(1500)
-    if not IsEntityPositionFrozen(trailer) then FreezeEntityPosition(trailer, true) end
-    if not IsEntityPositionFrozen(vehicle) then FreezeEntityPosition(vehicle, true) end
-    return trailer
+    --if not IsEntityPositionFrozen(trailer) then FreezeEntityPosition(trailer, true) end
+    --if not IsEntityPositionFrozen(vehicle) then FreezeEntityPosition(vehicle, true) end
 end
 
 function Parking.Functions.SpawnVehicles(vehicles)
     while isDeleting do Citizen.Wait(1000) end
     if type(vehicles) == 'table' and #vehicles > 0 and vehicles[1] then
+        -- Önce mevcut araçları temizle
+        for i = 1, #LocalVehicles do
+            if LocalVehicles[i] and LocalVehicles[i].entity and DoesEntityExist(LocalVehicles[i].entity) then
+                DeleteEntity(LocalVehicles[i].entity)
+                if LocalVehicles[i].blip then
+                    RemoveBlip(LocalVehicles[i].blip)
+                end
+            end
+        end
+        LocalVehicles = {}
+        
+        -- Yeni araçları spawn et
         for i = 1, #vehicles, 1 do
             if not Parking.Functions.IsVehicleAlreadyListed(vehicles[i].plate) then
                 local model = GetHashKey(vehicles[i].model)
                 LoadModel(model)
-                Parking.Functions.DeleteLocalVehicle(vehicles[i].plate)
                 local closestVehicle, closestDistance = GetClosestVehicle(vehicles[i].location)
                 if closestVehicle ~= -1 and closestDistance <= 5.0 then
-                    while DoesEntityExist(closestVehicle) do
-                        DeleteEntity(closestVehicle)
-                        Wait(50)
-                    end
+                    DeleteEntity(closestVehicle)
+                    Wait(50)
                 end
-                Wait(500)
+                
                 local vehicle = CreateVehicle(model, vehicles[i].location.x, vehicles[i].location.y, vehicles[i].location.z, vehicles[i].location.w, true, true)
-                while not DoesEntityExist(vehicle) do Citizen.Wait(500) end
+                while not DoesEntityExist(vehicle) do Wait(50) end
+                
                 SetEntityAsMissionEntity(vehicle, true, true)
                 SetVehicleProperties(vehicle, vehicles[i].mods)
                 SetModelAsNoLongerNeeded(model)
+                
                 local netid = VehToNet(vehicle)
                 SetNetworkIdExistsOnAllMachines(netid, true)
                 NetworkSetNetworkIdDynamic(netid, false)
                 SetNetworkIdCanMigrate(netid, true)
-                NetworkFadeInEntity(vehicle, true)
-                while NetworkIsEntityFading(vehicle) do Citizen.Wait(50) end
-                RequestCollisionAtCoord(vehicles[i].location.x, vehicles[i].location.y, vehicles[i].location.z)
+                
                 SetEntityHeading(vehicle, vehicles[i].location.w)
-                local retval, groundZ = GetGroundZFor_3dCoord(vehicles[i].location.x, vehicles[i].location.y, vehicles[i].location.z, false)
-                if retval then SetEntityCoords(vehicle, vehicles[i].location.x, vehicles[i].location.y, groundZ) end
                 SetVehicleOnGroundProperly(vehicle)
                 SetVehicleSteeringAngle(vehicle, vehicles[i].steerangle + 0.0)
                 SetEntityInvincible(vehicle, true)
                 SetVehRadioStation(vehicle, 'OFF')
                 SetVehicleDirtLevel(vehicle, 0)
                 SetVehicleDamage(vehicle, vehicles[i].engine, vehicles[i].body)
+                
                 TriggerServerEvent('mh-parkingV2:server:SetVehLockState', VehToNet(vehicle), 2)
                 SetVehicleDoorsLocked(vehicle, 2)
-                if GetResourceState(config.FuelScript) ~= 'missing' then exports[config.FuelScript]:SetFuel(vehicle, vehicles[i].fuel) end
-                if vehicles[i].trailerdata ~= nil then
-                    vehicles[i].trailerEntity = Parking.Functions.SpawnTrailer(vehicle, vehicles[i])
-                else
-                    if not IsEntityPositionFrozen(vehicle) then FreezeEntityPosition(vehicle, true) end
+                
+                if GetResourceState(config.FuelScript) ~= 'missing' then 
+                    exports[config.FuelScript]:SetFuel(vehicle, vehicles[i].fuel) 
                 end
-                Wait(50)
+                
                 Parking.Functions.AddParkedVehicle(vehicle, vehicles[i])
+                
+                if vehicles[i].trailerdata ~= nil then 
+                    Parking.Functions.SpawnTrailer(vehicle, vehicles[i])
+                else
+                    FreezeEntityPosition(vehicle, true)
+                end
             end
         end
     end
